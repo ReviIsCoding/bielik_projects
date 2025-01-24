@@ -7,17 +7,16 @@ def main():
     '''
     Główna funkcja wykonawcza skryptu
     '''
-    model_id, output_file = load_parameters()
+    model_id, output_file, use_q4 = load_parameters()
+    print('Rozpoczęcie zadania...')
     df = load_dataset()
-    model, tokenizer = load_model_and_tokenizer(model_id)
-    pipe = pipe = create_pipeline(model, tokenizer)
+    model, tokenizer = load_model_and_tokenizer(model_id, use_q4)
+    pipe = create_pipeline(model, tokenizer)
     df_with_answers = get_answer(df, pipe, model_id=model_id, num_rows=None)
 
     #Zapis wyników do pliku 
+    print(f"Zapisywanie wyników do pliku {output_file}")
     df_with_answers.to_csv(output_file, index=False)
-
-
-
 
 def load_dataset():
     """
@@ -43,17 +42,20 @@ def load_dataset():
     
     return df
 
-def load_model_and_tokenizer(model_id):
+def load_model_and_tokenizer(model_id, use_q4):
     """
     Wczytuje model językowy i tokenizer na podstawie identyfikatora modelu.
+    Obsługuje opcjonalną kwantyzację 4-bitową.
 
     Args:
-        model_id (str): Identyfikator modelu w Hugging Face
+        model_id (str): Identyfikator modelu w Hugging Face.
+        use_q4 (bool): Flaga określająca, czy włączyć kwantyzację 4-bitową.
 
     Returns:
-        model: Załadowany model językowy
+        model: Załadowany model językowy i tokenizer.
     """
-    quantization_config = BitsAndBytesConfig(load_in_4bit=True)
+    quantization_config = BitsAndBytesConfig(load_in_4bit=True) if use_q4 else None
+
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         device_map="auto",
@@ -121,7 +123,7 @@ def load_parameters():
     Ładuje argumenty przekazane w wierszu poleceń.
 
     Returns:
-        tuple: Zawiera identyfikator modelu i nazwę pliku wyjściowego.
+        tuple: Zawiera identyfikator modelu, nazwę pliku wyjściowego i flagę kwantyzacji.
     """
     parser = argparse.ArgumentParser(description="Skrypt generujący odpowiedzi dla benchmarku")
     parser.add_argument(
@@ -138,9 +140,15 @@ def load_parameters():
         help="Nazwa pliku wyjściowego (CSV)."
     )
 
+    parser.add_argument(
+        "--use-q4",
+        action="store_true",
+        help="Opcjonalna flaga do włączenia kwantyzacji 4-bitowej."
+    )
+
     args = parser.parse_args()
     
-    return (args.model_id, args.output_file)
+    return (args.model_id, args.output_file, args.use_q4)
 
 if __name__ == "__main__":
     main()
