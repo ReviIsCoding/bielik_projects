@@ -5,55 +5,55 @@ from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, BitsAndB
 
 def main():
     '''
-    Główna funkcja wykonawcza skryptu
+    The script's main function.
     '''
     model_id, output_file, dataset_URL, max_length, use_q4, num_rows = load_parameters()
-    print('Rozpoczęcie zadania...')
+    print('Getting started...')
     df = load_dataset(dataset_URL)
     model, tokenizer = load_model_and_tokenizer(model_id, use_q4)
     pipe = create_pipeline(model, tokenizer)
     df_with_answers = get_answer(df, pipe, model_id=model_id, max_length = max_length, num_rows=num_rows)
 
-    #Zapis wyników do pliku 
-    print(f"Zapisywanie wyników do pliku {output_file}")
+    # Saving to file
+    print(f"Saving results to a file: {output_file}")
     df_with_answers.to_csv(output_file, index=False)
 
 def load_dataset(dataset_URL):
     """
-    Wczytuje dane z arkusza Google Sheets, usuwa nadmiarowe kolumny i filtruje wiersze z "prawidłowe" == "T".
+    Loads data from Google Sheets, removes redundant columns and filters rows with “Prawidłowe” == “T”
 
     Args:
-        dataset_url (str): URL pliku CSV.
+        dataset_url (str): URL of the CSV file.
 
     Returns:
-        pd.DataFrame: Odfiltrowana ramka danych.
+        pd.DataFrame: Filtered DataFrame.
     """
     
-    # Wczytanie arkusza
+    # Loading dataset
     df = pd.read_csv(dataset_URL)
 
-    # Usunięcie nadmiarowych kolumn (np. 'Unnamed')
+    # Removing excessive columns (np. 'Unnamed')
     df.drop(columns=df.columns[df.columns.str.contains('^Unnamed')], inplace=True)
 
-    # Filtrowanie wierszy, gdzie "Prawidłowe" == "T"
+    # Filtering rows, where "Prawidłowe" == "T"
     if "Prawidłowe" in df.columns:
         df = df.loc[df["Prawidłowe"] == "T"]
     else:
-        raise ValueError("Brak wymaganej kolumny 'prawidłowe' w ramce danych.")
+        raise ValueError("The required 'Prawidłowe' column in the data frame is missing.")
     
     return df
 
 def load_model_and_tokenizer(model_id, use_q4):
     """
-    Wczytuje model językowy i tokenizer na podstawie identyfikatora modelu.
-    Obsługuje opcjonalną kwantyzację 4-bitową lub precyzję bfloat16.
+    Loads language model and tokenizer based on model identifier.
+    Supports optional 4-bit quantization or bfloat16 precision.
 
     Args:
-        model_id (str): Identyfikator modelu w Hugging Face.
-        use_q4 (bool): Flaga określająca, czy włączyć kwantyzację 4-bitową.
+        model_id (str): Hugging Face model ID.
+        use_q4 (bool): Flag indicating whether to enable 4-bit quantization.
 
     Returns:
-        tuple: Załadowany model językowy i tokenizer.
+        tuple: Loaded language model and tokenizer.
     """
     if use_q4:
         quantization_config = BitsAndBytesConfig(load_in_4bit=True)
@@ -67,7 +67,7 @@ def load_model_and_tokenizer(model_id, use_q4):
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="auto",
-            torch_dtype=torch.bfloat16,  # Precyzja bfloat16
+            torch_dtype=torch.bfloat16,  # bfloat16 precision
             trust_remote_code=True
         )
 
@@ -77,7 +77,7 @@ def load_model_and_tokenizer(model_id, use_q4):
 
 def create_pipeline(model, tokenizer):
     '''
-    Tworzy pipeline dla modelu i tokenizera.
+    Creates pipeline for model and tokenizer.
     '''
     pipe = pipeline(
     "text-generation", 
@@ -89,42 +89,42 @@ def create_pipeline(model, tokenizer):
 
 def get_answer(df, pipe, model_id, max_length, num_rows):
     """
-    Generuje odpowiedzi dla pytań w kolumnie 'Pytanie' i zapisuje je w nowej kolumnie 
-    z nazwą 'Odpowiedź: model_id'.
+    Generates answers for the questions in the 'Pytanie' i column and saves them in a new column 
+      with the name 'Odpowiedź: model_id'.
 
     Args:
-        df (pd.DataFrame): Ramka danych z kolumną 'Pytanie'.
-        pipe: Pipeline modelu językowego.
-        model_id (str): Nazwa modelu, która zostanie dodana do nagłówka kolumny odpowiedzi.
-        num_rows (int, optional): Liczba wierszy do przetworzenia. Przetwarza wszystkie wiersze, jeśli None.
+        df (pd.DataFrame): DataFrame with 'Pytanie' column.
+        pipe: Pipeline of the language model.
+        model_id (str): The name of the model, which will be added to the response column header.
+        num_rows (int, optional): Number of rows to process. Processes all rows if None.
 
     Returns:
-        pd.DataFrame: Zaktualizowana ramka danych z nową kolumną 'Odpowiedź: model_id'.
+        pd.DataFrame: Updated data frame with new column 'Odpowiedź: model_id'.
     """
-    # Jeśli num_rows jest None, przetwarzaj wszystkie wiersze
+    # If num_rows is None, process all rows
     df_subset = df if num_rows is None else df.head(num_rows).copy()
 
-     # Sprawdzenie, czy kolumna 'Pytanie' istnieje
+     # Checking whether the 'Pytanie' column exists
     if "Pytanie" not in df.columns:
-        raise ValueError("Ramka danych musi zawierać kolumnę 'Pytanie'.")
+        raise ValueError("The data frame must contain 'Pytanie' column.")
     
-    # Iteracja po pytaniach i generowanie odpowiedzi
+    # Iterate through questions and generate answers
     answers = []
     for idx, question in enumerate(df_subset["Pytanie"], start=1):
         try:
-            print(f"Przetwarzanie pytania {idx}/{len(df_subset)}: {question}")
+            print(f"Processing question {idx}/{len(df_subset)}: {question}")
             messages = [
                 {"role": "user", "content": question}
             ]
             response = pipe(messages, max_length= max_length, truncation=True, do_sample=False)
             generated_text = response[0]["generated_text"]
-            print(f"Odpowiedź: {generated_text}") 
+            print(f"Response: {generated_text}") 
         except Exception as e:
-            print(f"Błąd dla pytania: {question}. Szczegóły: {e}")
-            generated_text = "Błąd generacji"
+            print(f"Error for question: {question}. Szczegóły: {e}")
+            generated_text = "Generation error"
         answers.append(generated_text)
     
-    # Zapisanie odpowiedzi w nowej kolumnie
+    # Save the answer in a new column
     answer_column_name = f"Odpowiedź: {model_id}"
     df_subset[answer_column_name] = answers
     
@@ -132,32 +132,32 @@ def get_answer(df, pipe, model_id, max_length, num_rows):
 
 def load_parameters():
     """
-    Ładuje argumenty przekazane w wierszu poleceń.
+    Loads arguments passed on command line.
 
     Returns:
-        tuple: Zawiera identyfikator modelu, nazwę pliku wyjściowego, URL do datasetu
-        maksymalną długość odpowiedzi, flagę kwantyzacji i ilosć wierszy.
+        tuple: Contains model identifier, output file name, URL to dataset, maximum response length, 
+        quantization flag and number of rows.
     """
-    parser = argparse.ArgumentParser(description="Skrypt generujący odpowiedzi dla benchmarku")
+    parser = argparse.ArgumentParser(description="Script that generates answers for the benchmark")
     parser.add_argument(
         "--model_id",
         type=str,
         required=True,
-        help="Identyfikator modelu do ładowania."
+        help="Model ID to be loaded."
     )
 
     parser.add_argument(
         "--output_file",
         type=str,
         required=True,
-        help="Nazwa pliku wyjściowego (CSV)."
+        help="Output file name (CSV)."
     )
 
     parser.add_argument(
         "--dataset_URL",
         type= str,
         required=True,
-        help= "URL zbioru danych (plik CSV)."
+        help= "Dataset URL (CSV file)."
     )
 
     parser.add_argument(
@@ -165,13 +165,13 @@ def load_parameters():
         type=int,
         required= False,
         default= 1024,
-        help = "Maksymalna długość wygenerowanego tekstu (w tokenach)."
+        help = "Maximum length of the generated text (in tokens)."
     )
 
     parser.add_argument(
         "--use-q4",
         action="store_true",
-        help="Opcjonalna flaga do włączenia kwantyzacji 4-bitowej."
+        help="Optional flag to enable 4-bit quantization"
     )
 
     parser.add_argument(
@@ -179,8 +179,11 @@ def load_parameters():
         type= int,
         required= False,
         default= None,
-        help = "Opcjonalna liczba wierszy do przetworzenia (domyślnie przertwarzane są wszystkie)."
+        help = "Optional number of rows to process (by default all rows are processed)."
     )
+
+    if args.num_rows is not None and args.num_rows <= 0:
+        raise argparse.ArgumentTypeError("The value of num_rows must be greater than 0.")
 
     args = parser.parse_args()
     
