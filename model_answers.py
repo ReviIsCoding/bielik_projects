@@ -182,11 +182,12 @@ def load_parameters():
         help = "Optional number of rows to process (by default all rows are processed)."
     )
 
+    args = parser.parse_args()
+    
+    #Validate num_rows value
     if args.num_rows is not None and args.num_rows <= 0:
         raise argparse.ArgumentTypeError("The value of num_rows must be greater than 0.")
 
-    args = parser.parse_args()
-    
     return (args.model_id, args.output_file, args.dataset_URL, args.max_length, args.use_q4, args.num_rows)
 
 if __name__ == "__main__":
