@@ -20,7 +20,7 @@ def main():
 
 def load_dataset(dataset_URL):
     """
-    Loads data from Google Sheets, removes redundant columns and filters rows with “Prawidłowe” == “T”
+    Loads data from Google Sheets, removes redundant columns and filters rows with “correct” == “T”
 
     Args:
         dataset_url (str): URL of the CSV file.
@@ -35,11 +35,11 @@ def load_dataset(dataset_URL):
     # Removing excessive columns (np. 'Unnamed')
     df.drop(columns=df.columns[df.columns.str.contains('^Unnamed')], inplace=True)
 
-    # Filtering rows, where "Prawidłowe" == "T"
-    if "Prawidłowe" in df.columns:
-        df = df.loc[df["Prawidłowe"] == "T"]
+    # Filtering rows, where "correct" == "T"
+    if "correct" in df.columns:
+        df = df.loc[df["correct"] == "T"]
     else:
-        raise ValueError("The required 'Prawidłowe' column in the data frame is missing.")
+        raise ValueError("The required 'correct' column in the data frame is missing.")
     
     return df
 
@@ -89,28 +89,28 @@ def create_pipeline(model, tokenizer):
 
 def get_answer(df, pipe, model_id, max_length, num_rows):
     """
-    Generates answers for the questions in the 'Pytanie' i column and saves them in a new column 
-      with the name 'Odpowiedź: model_id'.
+    Generates answers for the questions in the 'question' column and saves them in a new column 
+      with the name 'generated_answer_{model_id}'.
 
     Args:
-        df (pd.DataFrame): DataFrame with 'Pytanie' column.
+        df (pd.DataFrame): DataFrame with 'question' column.
         pipe: Pipeline of the language model.
         model_id (str): The name of the model, which will be added to the response column header.
         num_rows (int, optional): Number of rows to process. Processes all rows if None.
 
     Returns:
-        pd.DataFrame: Updated data frame with new column 'Odpowiedź: model_id'.
+        pd.DataFrame: Updated data frame with new column 'generated_answer_{model_id}'.
     """
     # If num_rows is None, process all rows
     df_subset = df if num_rows is None else df.head(num_rows).copy()
 
-     # Checking whether the 'Pytanie' column exists
-    if "Pytanie" not in df.columns:
-        raise ValueError("The data frame must contain 'Pytanie' column.")
+     # Checking whether the 'question' column exists
+    if "question" not in df.columns:
+        raise ValueError("The data frame must contain 'question' column.")
     
     # Iterate through questions and generate answers
     answers = []
-    for idx, question in enumerate(df_subset["Pytanie"], start=1):
+    for idx, question in enumerate(df_subset["question"], start=1):
         try:
             print(f"Processing question {idx}/{len(df_subset)}: {question}")
             messages = [
@@ -125,7 +125,7 @@ def get_answer(df, pipe, model_id, max_length, num_rows):
         answers.append(generated_text)
     
     # Save the answer in a new column
-    answer_column_name = f"Odpowiedź: {model_id}"
+    answer_column_name = f"generated_answer_{model_id}"
     df_subset[answer_column_name] = answers
     
     return df_subset
