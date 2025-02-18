@@ -2,17 +2,23 @@ import pandas as pd
 import argparse
 import torch
 from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from openai import OpenAI
 
 def main():
     '''
     The script's main function.
     '''
-    model_id, output_file, dataset_URL, max_length, use_q4, num_rows = load_parameters()
+    model_id, output_file, dataset_URL, max_length, use_q4, num_rows, api_url, api_key = load_parameters()
     print('Getting started...')
     df = load_dataset(dataset_URL)
-    model, tokenizer = load_model_and_tokenizer(model_id, use_q4)
-    pipe = create_pipeline(model, tokenizer)
-    df_with_answers = get_answer(df, pipe, model_id=model_id, max_length = max_length, num_rows=num_rows)
+
+    if api_url:  # If a API url is specified, we use the API instead of the local model
+        client = OpenAI(base_url= api_url, api_key=api_key)
+        df_with_answers = get_answer_api(df, client, model_id, max_length, num_rows)
+    else:
+        model, tokenizer = load_model_and_tokenizer(model_id, use_q4)
+        pipe = create_pipeline(model, tokenizer)
+        df_with_answers = get_answer(df, pipe, model_id=model_id, max_length = max_length, num_rows=num_rows)
 
     # Saving to file
     print(f"Saving results to a file: {output_file}")
@@ -130,13 +136,37 @@ def get_answer(df, pipe, model_id, max_length, num_rows):
     
     return df_subset
 
+def get_answer_api(df, client, model_id, max_length, num_rows):
+    df_subset = df if num_rows is None else df.head(num_rows).copy()
+
+    if "question" not in df.columns:
+        raise ValueError("The data must contain 'question' column.")
+    answers = []
+    for idx, question in enumerate(df_subset["question"], start = 1):
+        try:
+            print(f"Processing question {idx}/{len(df_subset)}: {question}")
+            response = client.chat.completions.create(
+                model = model_id,
+                messages = [{'role':'user', 'content':question,}],
+                max_tokens = max_length
+            )
+            generated_text = response.choices[0].message.content.strip()
+            print(f"Response: {generated_text}")
+        except Exception as e:
+            print(f"Error for question: {question}. Details: {e}")
+            generated_text = "Generation error"
+        answers.append(generated_text)
+
+        df_subset[f"generated_answer_{model_id}"] = answers
+    return df_subset
+
 def load_parameters():
     """
     Loads arguments passed on command line.
 
     Returns:
         tuple: Contains model identifier, output file name, URL to dataset, maximum response length, 
-        quantization flag and number of rows.
+        quantization flag, number of rows, API url and API key.
     """
     parser = argparse.ArgumentParser(description="Script that generates answers for the benchmark")
     parser.add_argument(
@@ -181,6 +211,19 @@ def load_parameters():
         default= None,
         help = "Optional number of rows to process (by default all rows are processed)."
     )
+    parser.add_argument(
+        "--api_url", 
+        type=str, 
+        default=None, 
+        help="Base URL of the API endpoint."
+        )
+    
+    parser.add_argument(
+        "--api_key", 
+        type=str, 
+        default=None, 
+        help="API key for authentication."
+        )
 
     args = parser.parse_args()
     
@@ -188,7 +231,7 @@ def load_parameters():
     if args.num_rows is not None and args.num_rows <= 0:
         raise argparse.ArgumentTypeError("The value of num_rows must be greater than 0.")
 
-    return (args.model_id, args.output_file, args.dataset_URL, args.max_length, args.use_q4, args.num_rows)
+    return (args.model_id, args.output_file, args.dataset_URL, args.max_length, args.use_q4, args.num_rows, args.api_url, args.api_key)
 
 if __name__ == "__main__":
     main()
